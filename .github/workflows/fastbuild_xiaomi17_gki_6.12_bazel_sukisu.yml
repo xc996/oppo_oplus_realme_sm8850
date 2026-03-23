@@ -30,6 +30,11 @@ on:
         required: true
         type: boolean
         default: true
+      sukisu_ref:
+        description: 'SukiSU 版本(分支/标签/提交；默认 builtin，建议失败时固定为某个提交)'
+        required: true
+        type: string
+        default: 'builtin'
       upload_dist:
         description: '是否上传 dist 工件'
         required: true
@@ -100,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           cd kernel_workspace/common
-          curl -fsSL "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/refs/heads/main/kernel/setup.sh" | sh -s builtin
+          curl -fsSL "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/refs/heads/main/kernel/setup.sh" | sh -s "${{ inputs.sukisu_ref }}"
           test -f drivers/kernelsu/Kconfig
           grep -q "config KSU" drivers/kernelsu/Kconfig
           sed -i '/^#include <linux\/slab\.h>/a #include <linux\/vmalloc.h>' drivers/kernelsu/supercalls.c
