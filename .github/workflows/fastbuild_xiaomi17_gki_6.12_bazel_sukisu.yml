@@ -104,6 +104,10 @@ jobs:
           test -f drivers/kernelsu/Kconfig
           grep -q "config KSU" drivers/kernelsu/Kconfig
           sed -i '/^#include <linux\/slab\.h>/a #include <linux\/vmalloc.h>' drivers/kernelsu/supercalls.c
+          if ! grep -q '^ksu_obj-y += syscall_handler\.o$' drivers/kernelsu/Kbuild; then
+            sed -i '/^ksu_obj-y += supercalls\.o$/a ksu_obj-y += syscall_handler.o' drivers/kernelsu/Kbuild
+          fi
+          grep -n '^ksu_obj-y += syscall_handler\.o$' drivers/kernelsu/Kbuild
 
       - name: 构建 GKI（Bazel, notrim + lto=none）
         run: |
