@@ -1,0 +1,178 @@
+name: 小米17 GKI Bazel构建 6.12（SukiSU Ultra）
+
+env:
+  TZ: Asia/Shanghai
+  DEVICE_MODEL: '25113PN0EC'
+  DEVICE_CODENAME: 'pudding'
+  DEVICE_SOC: 'SM8850'
+  ANDROID_VERSION: 'android16'
+  TAG_HEAD: 'Xiaomi17-GKI-build'
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_branch:
+        description: 'kernel/manifest 分支(默认 common-android16-6.12，可选 common-android16-6.12-2025-12 等)'
+        required: true
+        type: string
+        default: 'common-android16-6.12'
+      build_target:
+        description: '构建目标(dist/autofdo_dist/both)'
+        required: true
+        type: choice
+        default: 'dist'
+        options:
+          - 'dist'
+          - 'autofdo_dist'
+          - 'both'
+      enable_sukisu:
+        description: '是否注入 SukiSU Ultra（builtin）'
+        required: true
+        type: boolean
+        default: true
+      upload_dist:
+        description: '是否上传 dist 工件'
+        required: true
+        type: boolean
+        default: true
+      create_release:
+        description: '是否创建 GitHub Release（会打 tag 并上传打包产物）'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 安装构建依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            git \
+            openjdk-17-jdk-headless \
+            python-is-python3 \
+            python3 \
+            bc \
+            bison \
+            flex \
+            build-essential \
+            libssl-dev \
+            libelf-dev \
+            rsync \
+            unzip \
+            zip \
+            xz-utils \
+            file
+
+      - name: 载入 Bazel 缓存
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-xiaomi17-${{ inputs.manifest_branch }}
+          restore-keys: |
+            bazel-${{ runner.os }}-xiaomi17-
+            bazel-${{ runner.os }}-
+
+      - name: 安装 repo 工具
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o "$HOME/bin/repo"
+          chmod +x "$HOME/bin/repo"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: 同步 Kernel workspace（manifest）
+        run: |
+          rm -rf kernel_workspace
+          mkdir -p kernel_workspace
+          cd kernel_workspace
+          repo init -u https://android.googlesource.com/kernel/manifest -b "${{ inputs.manifest_branch }}" --depth=1
+          repo sync -c -j"$(nproc)" --no-tags --no-clone-bundle
+
+      - name: 注入 SukiSU Ultra（builtin）
+        if: inputs.enable_sukisu
+        run: |
+          cd kernel_workspace
+          curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/refs/heads/main/kernel/setup.sh" | bash -s builtin
+          echo "CONFIG_KSU=y" >> common/arch/arm64/configs/gki_defconfig
+
+      - name: 构建 GKI（Bazel, notrim + lto=none）
+        run: |
+          cd kernel_workspace
+          chmod +x tools/bazel
+          rm -rf out_dist
+          mkdir -p out_dist
+          if [ "${{ inputs.build_target }}" = "dist" ]; then
+            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --dist_dir="$PWD/out_dist" 2>&1 | tee "$PWD/bazel_build.log"
+          elif [ "${{ inputs.build_target }}" = "autofdo_dist" ]; then
+            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --dist_dir="$PWD/out_dist" 2>&1 | tee "$PWD/bazel_build.log"
+          else
+            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --dist_dir="$PWD/out_dist" 2>&1 | tee "$PWD/bazel_build.log"
+            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --dist_dir="$PWD/out_dist" 2>&1 | tee -a "$PWD/bazel_build.log"
+          fi
+          echo "dist 内容预览："
+          ls -lah out_dist || true
+          tar -cJf "xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist.tar.xz" -C "$PWD" out_dist
+
+      - name: 上传 Bazel 构建日志
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_logs
+          path: |
+            kernel_workspace/bazel_build.log
+          if-no-files-found: warn
+
+      - name: 上传 dist 工件
+        if: inputs.upload_dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist
+          path: |
+            kernel_workspace/out_dist/**
+            kernel_workspace/dist/**
+            kernel_workspace/out/**/dist/**
+            kernel_workspace/xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist.tar.xz
+          if-no-files-found: error
+
+  release:
+    if: inputs.create_release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 下载 dist 工件
+        uses: actions/download-artifact@v8
+        with:
+          name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist
+          path: ./release_assets
+
+      - name: 设置发布信息
+        run: |
+          TIME="$(TZ='Asia/Shanghai' date +'%y%m%d%H%M%S')"
+          TIME_FORM="$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S')"
+          echo "TIME=$TIME" >> $GITHUB_ENV
+          echo "TIME_FORM=$TIME_FORM" >> $GITHUB_ENV
+          echo "REL_NAME=${{ env.TAG_HEAD }}-${{ inputs.manifest_branch }}-${{ inputs.build_target }}" >> $GITHUB_ENV
+
+      - name: 创建发布
+        uses: softprops/action-gh-release@v2.5.0
+        with:
+          tag_name: "${{ env.TAG_HEAD }}-${{ env.TIME }}"
+          name: "${{ env.REL_NAME }}"
+          body: |
+            - 设备：${{ env.DEVICE_CODENAME }}（${{ env.DEVICE_MODEL }} / ${{ env.DEVICE_SOC }}）
+            - 构建目标：${{ inputs.build_target }}
+            - manifest 分支：${{ inputs.manifest_branch }}
+            - 编译参数：--config=fast --notrim --lto=none --config=release
+            - 构建时间：${{ env.TIME_FORM }}
+          files: |
+            release_assets/**/*.tar.xz
+            release_assets/**/*
