@@ -109,6 +109,13 @@ jobs:
           fi
           grep -n '^ksu_obj-y += syscall_handler\.o$' drivers/kernelsu/Kbuild
 
+      - name: 快速预检（仅生成内核配置）
+        run: |
+          set -euo pipefail
+          cd kernel_workspace
+          chmod +x tools/bazel
+          tools/bazel build --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_config 2>&1 | tee "$PWD/bazel_precheck.log"
+
       - name: 构建 GKI（Bazel, notrim + lto=none）
         run: |
           set -euo pipefail
@@ -148,6 +155,7 @@ jobs:
           name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_logs
           path: |
             kernel_workspace/bazel_build.log
+            kernel_workspace/bazel_precheck.log
           if-no-files-found: warn
 
       - name: 上传 dist 工件
