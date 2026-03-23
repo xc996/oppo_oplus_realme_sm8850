@@ -98,12 +98,16 @@ jobs:
       - name: 注入 SukiSU Ultra（builtin）
         if: inputs.enable_sukisu
         run: |
-          cd kernel_workspace
-          curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/refs/heads/main/kernel/setup.sh" | bash -s builtin
-          echo "CONFIG_KSU=y" >> common/arch/arm64/configs/gki_defconfig
+          set -euo pipefail
+          cd kernel_workspace/common
+          curl -fsSL "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/refs/heads/main/kernel/setup.sh" | sh -s builtin
+          test -f drivers/kernelsu/Kconfig
+          grep -q "config KSU" drivers/kernelsu/Kconfig
+          echo "CONFIG_KSU=y" >> arch/arm64/configs/gki_defconfig
 
       - name: 构建 GKI（Bazel, notrim + lto=none）
         run: |
+          set -euo pipefail
           cd kernel_workspace
           chmod +x tools/bazel
           rm -rf out_dist
@@ -116,8 +120,21 @@ jobs:
             tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --dist_dir="$PWD/out_dist" 2>&1 | tee "$PWD/bazel_build.log"
             tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --dist_dir="$PWD/out_dist" 2>&1 | tee -a "$PWD/bazel_build.log"
           fi
+          if [ ! -d out_dist ] || [ -z "$(ls -A out_dist 2>/dev/null)" ]; then
+            if [ -d dist ] && [ -n "$(ls -A dist 2>/dev/null)" ]; then
+              rsync -a dist/ out_dist/
+            fi
+          fi
+          if [ ! -d out_dist ] || [ -z "$(ls -A out_dist 2>/dev/null)" ]; then
+            if [ -d out ]; then
+              while IFS= read -r d; do
+                rsync -a "$d"/ out_dist/ || true
+              done < <(find out -maxdepth 5 -type d -name dist 2>/dev/null)
+            fi
+          fi
           echo "dist 内容预览："
           ls -lah out_dist || true
+          test -n "$(ls -A out_dist 2>/dev/null)"
           tar -cJf "xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist.tar.xz" -C "$PWD" out_dist
 
       - name: 上传 Bazel 构建日志
@@ -136,8 +153,6 @@ jobs:
           name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist
           path: |
             kernel_workspace/out_dist/**
-            kernel_workspace/dist/**
-            kernel_workspace/out/**/dist/**
             kernel_workspace/xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist.tar.xz
           if-no-files-found: error
 
