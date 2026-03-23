@@ -103,6 +103,7 @@ jobs:
           curl -fsSL "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/refs/heads/main/kernel/setup.sh" | sh -s builtin
           test -f drivers/kernelsu/Kconfig
           grep -q "config KSU" drivers/kernelsu/Kconfig
+          sed -i '/^#include <linux\\/slab\\.h>/a #include <linux/vmalloc.h>' drivers/kernelsu/supercalls.c
 
       - name: 构建 GKI（Bazel, notrim + lto=none）
         run: |
