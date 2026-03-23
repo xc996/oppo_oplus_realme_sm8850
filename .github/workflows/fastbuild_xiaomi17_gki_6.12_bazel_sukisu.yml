@@ -103,7 +103,6 @@ jobs:
           curl -fsSL "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/refs/heads/main/kernel/setup.sh" | sh -s builtin
           test -f drivers/kernelsu/Kconfig
           grep -q "config KSU" drivers/kernelsu/Kconfig
-          echo "CONFIG_KSU=y" >> arch/arm64/configs/gki_defconfig
 
       - name: 构建 GKI（Bazel, notrim + lto=none）
         run: |
