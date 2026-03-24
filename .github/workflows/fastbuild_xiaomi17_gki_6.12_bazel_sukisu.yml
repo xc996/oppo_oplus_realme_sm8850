@@ -17,13 +17,14 @@ on:
         type: string
         default: 'common-android16-6.12'
       mode:
-        description: '执行模式(precheck 只做预检 / build 产出 dist)'
+        description: '执行模式(precheck 只做预检 / image 仅构建内核镜像 / dist 构建完整dist)'
         required: true
         type: choice
         default: 'precheck'
         options:
           - 'precheck'
-          - 'build'
+          - 'image'
+          - 'dist'
       build_target:
         description: '构建目标(dist/autofdo_dist/both)'
         required: true
@@ -195,8 +196,27 @@ jobs:
           chmod +x tools/bazel
           tools/bazel build --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_config 2>&1 | tee "$PWD/bazel_precheck.log"
 
-      - name: 构建 GKI（Bazel, notrim + lto=none）
-        if: inputs.mode == 'build'
+      - name: 构建内核镜像（Bazel, fast, notrim + lto=none）
+        if: inputs.mode == 'image'
+        run: |
+          set -euo pipefail
+          cd kernel_workspace
+          chmod +x tools/bazel
+          rm -rf out_dist
+          mkdir -p out_dist
+          tools/bazel build --config=fast --notrim --lto=none --config=release //common:kernel_aarch64 2>&1 | tee "$PWD/bazel_build.log"
+          IMG="$(find bazel-bin -maxdepth 6 -type f \( -name 'Image' -o -name 'Image.lz4' -o -name 'Image.gz' -o -name 'Image.lz4-dtb' -o -name 'Image.gz-dtb' \) 2>/dev/null | head -n 1 || true)"
+          test -n "$IMG"
+          cp -a "$IMG" out_dist/Image
+          DTBO="$(find bazel-bin -maxdepth 10 -type f -name 'dtbo.img' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$DTBO" ]; then
+            cp -a "$DTBO" out_dist/dtbo.img
+          fi
+          echo "out_dist 内容预览："
+          ls -lah out_dist || true
+
+      - name: 构建 GKI（Bazel dist, notrim + lto=none）
+        if: inputs.mode == 'dist'
         run: |
           set -euo pipefail
           cd kernel_workspace
@@ -224,10 +244,12 @@ jobs:
           if [ -n "$(ls -A out_min 2>/dev/null)" ]; then
             (cd out_min && zip -q -r9 "../xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_minimal.zip" .)
           fi
-          tar -cJf "xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist.tar.xz" -C "$PWD" out_dist
+          if [ "${{ inputs.artifact_profile }}" != "minimal" ]; then
+            tar -cJf "xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist.tar.xz" -C "$PWD" out_dist
+          fi
 
       - name: 克隆 AnyKernel3 并打包（可直接刷入）
-        if: inputs.mode == 'build'
+        if: inputs.mode == 'image' || inputs.mode == 'dist'
         run: |
           set -euo pipefail
           cd kernel_workspace
@@ -268,7 +290,7 @@ jobs:
           if-no-files-found: warn
 
       - name: 上传产物（minimal）
-        if: inputs.upload_dist && inputs.mode == 'build' && inputs.artifact_profile != 'full'
+        if: inputs.upload_dist && (inputs.mode == 'image' || inputs.mode == 'dist') && inputs.artifact_profile != 'full'
         uses: actions/upload-artifact@v7
         with:
           name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_minimal
@@ -278,7 +300,7 @@ jobs:
           if-no-files-found: error
 
       - name: 上传产物（full）
-        if: inputs.upload_dist && inputs.mode == 'build' && inputs.artifact_profile != 'minimal'
+        if: inputs.upload_dist && inputs.mode == 'dist' && inputs.artifact_profile != 'minimal'
         uses: actions/upload-artifact@v7
         with:
           name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_full
