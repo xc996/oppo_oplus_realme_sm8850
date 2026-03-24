@@ -34,6 +34,11 @@ on:
           - 'dist'
           - 'autofdo_dist'
           - 'both'
+      kernel_suffix:
+        description: '产物后缀(可选，如 4k；会拼到AnyKernel3文件名末尾)'
+        required: true
+        type: string
+        default: 'pudding'
       enable_sukisu:
         description: '是否注入 SukiSU Ultra（builtin）'
         required: true
@@ -44,6 +49,11 @@ on:
         required: true
         type: string
         default: 'builtin'
+      enable_precheck:
+        description: '是否启用预检(会额外跑一次 kernel_aarch64_config；更稳但更慢)'
+        required: true
+        type: boolean
+        default: false
       artifact_profile:
         description: '上传产物范围(minimal 仅内核镜像相关 / full 完整 dist / both 两者都传)'
         required: true
@@ -190,6 +200,7 @@ jobs:
           } 2>&1 | tee "$GITHUB_WORKSPACE/kernel_workspace/ksu_precheck.log"
 
       - name: 快速预检（仅生成内核配置）
+        if: inputs.mode == 'precheck' || inputs.enable_precheck
         run: |
           set -euo pipefail
           cd kernel_workspace
@@ -295,7 +306,18 @@ jobs:
           if [ "${{ inputs.enable_sukisu }}" = "true" ]; then
             KSU_TAG="SukiSU"
           fi
-          AK3_NAME="AnyKernel3_${KSU_TAG}_${{ inputs.sukisu_ref }}_6.12_${{ inputs.manifest_branch }}_${{ inputs.flash_block }}.zip"
+          KSUVER="$(grep -m1 -Eo 'SukiSU-Ultra version \\(GitHub\\): [0-9]+' ../bazel_build.log 2>/dev/null | awk '{print $NF}' || true)"
+          if [ -z "$KSUVER" ]; then
+            KSUVER="unknown"
+          fi
+          COMMON_SHA="$(cd ../common && git rev-parse --short=12 HEAD)"
+          KERNEL_NAME="${{ inputs.manifest_branch }}-g${COMMON_SHA}"
+          SUFFIX="${{ inputs.kernel_suffix }}"
+          if [ -n "$SUFFIX" ]; then
+            AK3_NAME="AnyKernel3_${KSU_TAG}_${KSUVER}_6.12_${KERNEL_NAME}-${SUFFIX}.zip"
+          else
+            AK3_NAME="AnyKernel3_${KSU_TAG}_${KSUVER}_6.12_${KERNEL_NAME}.zip"
+          fi
           zip -q -r "../$AK3_NAME" ./*
 
       - name: 上传 Bazel 构建日志
