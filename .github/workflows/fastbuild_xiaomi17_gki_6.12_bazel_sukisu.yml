@@ -133,6 +133,16 @@ jobs:
           test -f drivers/kernelsu/Kconfig
           grep -q "config KSU" drivers/kernelsu/Kconfig
           sed -i '/^#include <linux\/slab\.h>/a #include <linux\/vmalloc.h>' drivers/kernelsu/supercalls.c
+          cat > drivers/kernelsu/mark_stub.c <<'EOF'
+          #include <linux/compiler.h>
+          
+          void __weak ksu_mark_running_process(void)
+          {
+          }
+          EOF
+          if ! grep -q '^ksu_obj-y += mark_stub\.o$' drivers/kernelsu/Kbuild; then
+            sed -i '/^ksu_obj-y += supercalls\.o$/a ksu_obj-y += mark_stub.o' drivers/kernelsu/Kbuild
+          fi
 
       - name: 快速预检（KSU 文件检查）
         if: inputs.enable_sukisu
@@ -145,7 +155,9 @@ jobs:
             test -f drivers/kernelsu/Kconfig
             test -f drivers/kernelsu/Kbuild
             test -f drivers/kernelsu/supercalls.c
+            test -f drivers/kernelsu/mark_stub.c
             grep -n '^#include <linux/vmalloc\.h>$' drivers/kernelsu/supercalls.c
+            grep -n '^ksu_obj-y += mark_stub\.o$' drivers/kernelsu/Kbuild
             grep -RIn "ksu_mark_running_process" drivers/kernelsu | head -n 20
           } 2>&1 | tee "$GITHUB_WORKSPACE/kernel_workspace/ksu_precheck.log"
 
