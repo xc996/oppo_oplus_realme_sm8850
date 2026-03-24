@@ -147,9 +147,9 @@ jobs:
           test -n "$CLANG_DIR"
           export PATH="$PWD/$CLANG_DIR/bin:$PWD/prebuilts/kernel-build-tools/linux-x86/bin:$PATH"
           rm -rf out_ksu_precheck
-          make -C common O="$PWD/out_ksu_precheck" gki_defconfig
-          make -C common O="$PWD/out_ksu_precheck" olddefconfig
-          make -C common -j"$(nproc)" O="$PWD/out_ksu_precheck" LLVM=1 LLVM_IAS=1 drivers/kernelsu/ 2>&1 | tee "$PWD/ksu_precheck.log"
+          make -C common O="$PWD/out_ksu_precheck" ARCH=arm64 gki_defconfig
+          make -C common O="$PWD/out_ksu_precheck" ARCH=arm64 olddefconfig
+          make -C common -j"$(nproc)" O="$PWD/out_ksu_precheck" ARCH=arm64 LLVM=1 LLVM_IAS=1 drivers/kernelsu/ 2>&1 | tee "$PWD/ksu_precheck.log"
 
       - name: 快速预检（仅生成内核配置）
         run: |
