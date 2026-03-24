@@ -52,6 +52,24 @@ on:
           - 'minimal'
           - 'full'
           - 'both'
+      flash_block:
+        description: 'AnyKernel3 刷写分区(默认init_boot；不确定可选auto)'
+        required: true
+        type: choice
+        default: 'init_boot'
+        options:
+          - 'init_boot'
+          - 'boot'
+          - 'auto'
+      include_dtbo:
+        description: 'AnyKernel3 是否携带 dtbo.img(auto 有就带 / yes 强制带 / no 不带)'
+        required: true
+        type: choice
+        default: 'auto'
+        options:
+          - 'auto'
+          - 'yes'
+          - 'no'
       upload_dist:
         description: '是否上传 dist 工件'
         required: true
@@ -208,6 +226,36 @@ jobs:
           fi
           tar -cJf "xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist.tar.xz" -C "$PWD" out_dist
 
+      - name: 克隆 AnyKernel3 并打包（可直接刷入）
+        if: inputs.mode == 'build'
+        run: |
+          set -euo pipefail
+          cd kernel_workspace
+          rm -rf AnyKernel3
+          git clone https://github.com/cctv18/AnyKernel3 --depth=1 AnyKernel3
+          rm -rf ./AnyKernel3/.git
+          cd AnyKernel3
+          if [ -f ../out_dist/Image ]; then
+            cp ../out_dist/Image ./Image
+          else
+            IMG="$(ls -1 ../out_dist/Image* 2>/dev/null | head -n 1 || true)"
+            test -n "$IMG"
+            cp "$IMG" ./Image
+          fi
+          sed -i "s/^BLOCK=.*/BLOCK=${{ inputs.flash_block }}/" anykernel.sh
+          if [ "${{ inputs.include_dtbo }}" != "no" ] && [ -f ../out_dist/dtbo.img ]; then
+            cp ../out_dist/dtbo.img ./dtbo.img
+          fi
+          if [ "${{ inputs.include_dtbo }}" = "yes" ]; then
+            test -f ./dtbo.img
+          fi
+          KSU_TAG="NoKSU"
+          if [ "${{ inputs.enable_sukisu }}" = "true" ]; then
+            KSU_TAG="SukiSU"
+          fi
+          AK3_NAME="AnyKernel3_${KSU_TAG}_${{ inputs.sukisu_ref }}_6.12_${{ inputs.manifest_branch }}_${{ inputs.flash_block }}.zip"
+          zip -q -r "../$AK3_NAME" ./*
+
       - name: 上传 Bazel 构建日志
         if: always()
         uses: actions/upload-artifact@v7
@@ -225,6 +273,7 @@ jobs:
         with:
           name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_minimal
           path: |
+            kernel_workspace/AnyKernel3_*.zip
             kernel_workspace/xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_minimal.zip
           if-no-files-found: error
 
