@@ -281,6 +281,7 @@ jobs:
 
       - name: 克隆 AnyKernel3 并打包（可直接刷入）
         if: inputs.mode == 'image' || inputs.mode == 'dist'
+        id: create_zip
         run: |
           set -euo pipefail
           cd kernel_workspace
@@ -319,6 +320,7 @@ jobs:
             AK3_NAME="AnyKernel3_${KSU_TAG}_${KSUVER}_6.12_${KERNEL_NAME}.zip"
           fi
           zip -q -r "../$AK3_NAME" ./*
+          echo "ak3_name=$AK3_NAME" >> "$GITHUB_OUTPUT"
 
       - name: 上传 Bazel 构建日志
         if: always()
@@ -330,6 +332,15 @@ jobs:
             kernel_workspace/bazel_precheck.log
             kernel_workspace/ksu_precheck.log
           if-no-files-found: warn
+
+      - name: 上传 AnyKernel3 ZIP（单独显示文件名）
+        if: inputs.upload_dist && (inputs.mode == 'image' || inputs.mode == 'dist')
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.create_zip.outputs.ak3_name }}
+          path: |
+            kernel_workspace/${{ steps.create_zip.outputs.ak3_name }}
+          if-no-files-found: error
 
       - name: 上传产物（minimal）
         if: inputs.upload_dist && (inputs.mode == 'image' || inputs.mode == 'dist') && inputs.artifact_profile != 'full'
