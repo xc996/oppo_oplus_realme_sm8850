@@ -177,12 +177,12 @@ jobs:
           rm -rf out_dist
           mkdir -p out_dist
           if [ "${{ inputs.build_target }}" = "dist" ]; then
-            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --dist_dir="$PWD/out_dist" 2>&1 | tee "$PWD/bazel_build.log"
+            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee "$PWD/bazel_build.log"
           elif [ "${{ inputs.build_target }}" = "autofdo_dist" ]; then
-            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --dist_dir="$PWD/out_dist" 2>&1 | tee "$PWD/bazel_build.log"
+            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee "$PWD/bazel_build.log"
           else
-            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --dist_dir="$PWD/out_dist" 2>&1 | tee "$PWD/bazel_build.log"
-            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --dist_dir="$PWD/out_dist" 2>&1 | tee -a "$PWD/bazel_build.log"
+            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee "$PWD/bazel_build.log"
+            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee -a "$PWD/bazel_build.log"
           fi
           if [ ! -d out_dist ] || [ -z "$(ls -A out_dist 2>/dev/null)" ]; then
             if [ -d dist ] && [ -n "$(ls -A dist 2>/dev/null)" ]; then
