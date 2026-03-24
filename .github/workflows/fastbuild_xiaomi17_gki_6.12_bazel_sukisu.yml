@@ -43,6 +43,15 @@ on:
         required: true
         type: string
         default: 'builtin'
+      artifact_profile:
+        description: '上传产物范围(minimal 仅内核镜像相关 / full 完整 dist / both 两者都传)'
+        required: true
+        type: choice
+        default: 'minimal'
+        options:
+          - 'minimal'
+          - 'full'
+          - 'both'
       upload_dist:
         description: '是否上传 dist 工件'
         required: true
@@ -184,21 +193,19 @@ jobs:
             tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee "$PWD/bazel_build.log"
             tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee -a "$PWD/bazel_build.log"
           fi
-          if [ ! -d out_dist ] || [ -z "$(ls -A out_dist 2>/dev/null)" ]; then
-            if [ -d dist ] && [ -n "$(ls -A dist 2>/dev/null)" ]; then
-              rsync -a dist/ out_dist/
-            fi
-          fi
-          if [ ! -d out_dist ] || [ -z "$(ls -A out_dist 2>/dev/null)" ]; then
-            if [ -d out ]; then
-              while IFS= read -r d; do
-                rsync -a "$d"/ out_dist/ || true
-              done < <(find out -maxdepth 5 -type d -name dist 2>/dev/null)
-            fi
-          fi
           echo "dist 内容预览："
           ls -lah out_dist || true
           test -n "$(ls -A out_dist 2>/dev/null)"
+          rm -rf out_min
+          mkdir -p out_min
+          for f in Image Image.gz Image.lz4 Image.lz4-dtb Image.gz-dtb System.map Module.symvers modules.load modules.blocklist dtbo.img; do
+            if [ -f "out_dist/$f" ]; then
+              cp -a "out_dist/$f" out_min/
+            fi
+          done
+          if [ -n "$(ls -A out_min 2>/dev/null)" ]; then
+            (cd out_min && zip -q -r9 "../xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_minimal.zip" .)
+          fi
           tar -cJf "xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist.tar.xz" -C "$PWD" out_dist
 
       - name: 上传 Bazel 构建日志
@@ -212,13 +219,21 @@ jobs:
             kernel_workspace/ksu_precheck.log
           if-no-files-found: warn
 
-      - name: 上传 dist 工件
-        if: inputs.upload_dist && inputs.mode == 'build'
+      - name: 上传产物（minimal）
+        if: inputs.upload_dist && inputs.mode == 'build' && inputs.artifact_profile != 'full'
         uses: actions/upload-artifact@v7
         with:
-          name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist
+          name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_minimal
           path: |
-            kernel_workspace/out_dist/**
+            kernel_workspace/xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_minimal.zip
+          if-no-files-found: error
+
+      - name: 上传产物（full）
+        if: inputs.upload_dist && inputs.mode == 'build' && inputs.artifact_profile != 'minimal'
+        uses: actions/upload-artifact@v7
+        with:
+          name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_full
+          path: |
             kernel_workspace/xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist.tar.xz
           if-no-files-found: error
 
@@ -232,7 +247,8 @@ jobs:
       - name: 下载 dist 工件
         uses: actions/download-artifact@v8
         with:
-          name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_dist
+          pattern: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_*
+          merge-multiple: true
           path: ./release_assets
 
       - name: 设置发布信息
