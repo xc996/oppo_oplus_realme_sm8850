@@ -306,7 +306,7 @@ jobs:
           if [ "${{ inputs.enable_sukisu }}" = "true" ]; then
             KSU_TAG="SukiSU"
           fi
-          KSUVER="$(grep -m1 -Eo 'SukiSU-Ultra version \\(GitHub\\): [0-9]+' ../bazel_build.log 2>/dev/null | awk '{print $NF}' || true)"
+          KSUVER="$(grep -m1 -Eo 'SukiSU-Ultra version \((GitHub|Github)\): [0-9]+' ../bazel_build.log 2>/dev/null | awk '{print $NF}' || true)"
           if [ -z "$KSUVER" ]; then
             KSUVER="unknown"
           fi
