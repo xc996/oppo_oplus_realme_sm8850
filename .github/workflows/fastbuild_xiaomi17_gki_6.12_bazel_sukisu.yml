@@ -105,6 +105,7 @@ jobs:
             ca-certificates \
             curl \
             git \
+            jq \
             openjdk-17-jdk-headless \
             python-is-python3 \
             python3 \
@@ -125,6 +126,8 @@ jobs:
         with:
           path: |
             ~/.cache/bazel
+            ~/.cache/bazel-disk
+            ~/.cache/bazel-repo
             ~/.cache/bazelisk
           key: bazel-${{ runner.os }}-xiaomi17-${{ inputs.manifest_branch }}
           restore-keys: |
@@ -205,7 +208,7 @@ jobs:
           set -euo pipefail
           cd kernel_workspace
           chmod +x tools/bazel
-          tools/bazel build --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_config 2>&1 | tee "$PWD/bazel_precheck.log"
+          tools/bazel build --disk_cache="$HOME/.cache/bazel-disk" --repository_cache="$HOME/.cache/bazel-repo" --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_config 2>&1 | tee "$PWD/bazel_precheck.log"
 
       - name: 构建内核镜像（Bazel, fast, notrim + lto=none）
         if: inputs.mode == 'image'
@@ -215,7 +218,7 @@ jobs:
           chmod +x tools/bazel
           rm -rf out_dist
           mkdir -p out_dist
-          tools/bazel build --config=fast --notrim --lto=none --config=release //common:kernel_aarch64 2>&1 | tee "$PWD/bazel_build.log"
+          tools/bazel build --disk_cache="$HOME/.cache/bazel-disk" --repository_cache="$HOME/.cache/bazel-repo" --config=fast --notrim --lto=none --config=release //common:kernel_aarch64 2>&1 | tee "$PWD/bazel_build.log"
           BAZEL_BIN="$(tools/bazel info bazel-bin)"
           IMG=""
           for p in \
@@ -255,12 +258,12 @@ jobs:
           rm -rf out_dist
           mkdir -p out_dist
           if [ "${{ inputs.build_target }}" = "dist" ]; then
-            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee "$PWD/bazel_build.log"
+            tools/bazel run --disk_cache="$HOME/.cache/bazel-disk" --repository_cache="$HOME/.cache/bazel-repo" --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee "$PWD/bazel_build.log"
           elif [ "${{ inputs.build_target }}" = "autofdo_dist" ]; then
-            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee "$PWD/bazel_build.log"
+            tools/bazel run --disk_cache="$HOME/.cache/bazel-disk" --repository_cache="$HOME/.cache/bazel-repo" --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee "$PWD/bazel_build.log"
           else
-            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee "$PWD/bazel_build.log"
-            tools/bazel run --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee -a "$PWD/bazel_build.log"
+            tools/bazel run --disk_cache="$HOME/.cache/bazel-disk" --repository_cache="$HOME/.cache/bazel-repo" --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee "$PWD/bazel_build.log"
+            tools/bazel run --disk_cache="$HOME/.cache/bazel-disk" --repository_cache="$HOME/.cache/bazel-repo" --config=fast --notrim --lto=none --config=release //common:kernel_aarch64_autofdo_dist -- --destdir="$PWD/out_dist" --wipe_destdir 2>&1 | tee -a "$PWD/bazel_build.log"
           fi
           echo "dist 内容预览："
           ls -lah out_dist || true
