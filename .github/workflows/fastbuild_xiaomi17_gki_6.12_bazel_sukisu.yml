@@ -321,6 +321,27 @@ jobs:
           fi
           zip -q -r "../$AK3_NAME" ./*
           echo "ak3_name=$AK3_NAME" >> "$GITHUB_OUTPUT"
+          echo "ksu_ver=$KSUVER" >> "$GITHUB_OUTPUT"
+
+      - name: 下载 SukiSU 管理器（尽量匹配接口版本）
+        if: inputs.enable_sukisu && inputs.upload_dist && (inputs.mode == 'image' || inputs.mode == 'dist')
+        id: download_manager
+        run: |
+          set -euo pipefail
+          cd kernel_workspace
+          mkdir -p managers
+          KSUVER="${{ steps.create_zip.outputs.ksu_ver }}"
+          URL=""
+          if [ -n "$KSUVER" ] && [ "$KSUVER" != "unknown" ]; then
+            URL="$(curl -fsSL "https://api.github.com/repos/SukiSU-Ultra/SukiSU-Ultra/releases?per_page=30" | jq -r --arg v "$KSUVER" '[.[] | .assets[]? | select(.name|endswith(".apk")) | select(.name|contains("_"+$v+"-release.apk"))][0].browser_download_url // empty')"
+          fi
+          if [ -z "$URL" ]; then
+            URL="$(curl -fsSL "https://api.github.com/repos/SukiSU-Ultra/SukiSU-Ultra/releases/latest" | jq -r '.assets[]? | select(.name|endswith(".apk")) | .browser_download_url' | head -n 1)"
+          fi
+          test -n "$URL"
+          NAME="$(basename "$URL")"
+          curl -fL "$URL" -o "managers/$NAME"
+          echo "mgr_name=$NAME" >> "$GITHUB_OUTPUT"
 
       - name: 上传 Bazel 构建日志
         if: always()
@@ -342,6 +363,15 @@ jobs:
             kernel_workspace/${{ steps.create_zip.outputs.ak3_name }}
           if-no-files-found: error
 
+      - name: 上传 SukiSU 管理器（单独显示文件名）
+        if: steps.download_manager.outputs.mgr_name != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.download_manager.outputs.mgr_name }}
+          path: |
+            kernel_workspace/managers/${{ steps.download_manager.outputs.mgr_name }}
+          if-no-files-found: error
+
       - name: 上传产物（minimal）
         if: inputs.upload_dist && (inputs.mode == 'image' || inputs.mode == 'dist') && inputs.artifact_profile != 'full'
         uses: actions/upload-artifact@v7
@@ -349,6 +379,7 @@ jobs:
           name: xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_minimal
           path: |
             kernel_workspace/AnyKernel3_*.zip
+            kernel_workspace/managers/*.apk
             kernel_workspace/xiaomi17_${{ inputs.build_target }}_${{ inputs.manifest_branch }}_minimal.zip
           if-no-files-found: error
 
@@ -382,6 +413,16 @@ jobs:
           echo "TIME=$TIME" >> $GITHUB_ENV
           echo "TIME_FORM=$TIME_FORM" >> $GITHUB_ENV
           echo "REL_NAME=${{ env.TAG_HEAD }}-${{ inputs.manifest_branch }}-${{ inputs.build_target }}" >> $GITHUB_ENV
+          echo "KSUVER=unknown" >> $GITHUB_ENV
+          echo "MGR_NAME=unknown" >> $GITHUB_ENV
+          AK3="$(ls -1 release_assets/AnyKernel3_*.zip 2>/dev/null | head -n 1 || true)"
+          if [ -n "$AK3" ]; then
+            echo "KSUVER=$(basename "$AK3" | awk -F'_' '{print $3}')" >> $GITHUB_ENV
+          fi
+          MGR="$(ls -1 release_assets/managers/*.apk 2>/dev/null | head -n 1 || true)"
+          if [ -n "$MGR" ]; then
+            echo "MGR_NAME=$(basename "$MGR")" >> $GITHUB_ENV
+          fi
 
       - name: 创建发布
         uses: softprops/action-gh-release@v2.5.0
@@ -393,6 +434,8 @@ jobs:
             - 构建目标：${{ inputs.build_target }}
             - manifest 分支：${{ inputs.manifest_branch }}
             - 编译参数：--config=fast --notrim --lto=none --config=release
+            - SukiSU 接口版本：${{ env.KSUVER }}
+            - SukiSU 管理器：${{ env.MGR_NAME }}
             - 构建时间：${{ env.TIME_FORM }}
           files: |
             release_assets/**/*.tar.xz
